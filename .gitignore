@@ -10,8 +10,8 @@ module-cache/
 Trial.app/
 Trial.applescript
 hotkey-debug.log
-App.swift
-Info.plist
+/App.swift
+/Info.plist
 outputs/
 *.xcodeproj
 *.xcworkspace
