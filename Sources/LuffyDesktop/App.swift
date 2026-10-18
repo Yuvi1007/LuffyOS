@@ -22,6 +22,11 @@ struct LuffyDesktopApp {
     }
 }
 
+final class InteractiveAvatarPanel: NSPanel {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { false }
+}
+
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private let chatStore = ChatStore()
@@ -41,9 +46,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerGlobalHotKey()
         enableLaunchAtLoginIfNeeded()
 
-        // Keep floating desktop pet hidden by default so the screen stays clean and uncluttered.
-        petPanel?.orderOut(nil)
-        chatStore.isPetVisible = false
+        // Show the Interactive Gear-5 Avatar HUD at the bottom-right corner
+        petPanel?.orderFrontRegardless()
+        chatStore.isPetVisible = true
         chatStore.onTogglePet = { [weak self] visible in
             guard let self else { return }
             if visible {
@@ -51,6 +56,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             } else {
                 self.petPanel?.orderOut(nil)
             }
+        }
+        chatStore.onOpenCommandDeck = { [weak self] in
+            self?.openChat()
         }
 
         NSApp.activate(ignoringOtherApps: true)
@@ -84,8 +92,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let chatToggle = menuItem("Show / Hide Command Deck (⌘1)", #selector(toggleChatWindow))
         menu.addItem(chatToggle)
         chatToggleMenuItem = chatToggle
-        menu.addItem(menuItem("Show Mini Desktop Avatar", #selector(showPet)))
-        menu.addItem(menuItem("Hide Mini Desktop Avatar", #selector(hidePet)))
+        menu.addItem(menuItem("Show Interactive Avatar HUD", #selector(showPet)))
+        menu.addItem(menuItem("Hide Interactive Avatar HUD", #selector(hidePet)))
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings & Quota Mesh…", #selector(openSettings)))
         let launch = menuItem("Launch at Login", #selector(toggleLaunchAtLogin))
@@ -121,8 +129,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func createPetPanel() {
-        let size = NSSize(width: 86, height: 96)
-        let panel = NSPanel(
+        let size = NSSize(width: 390, height: 480)
+        let panel = InteractiveAvatarPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
             backing: .buffered,
@@ -136,22 +144,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.isMovableByWindowBackground = true
         panel.hidesOnDeactivate = false
 
-        let imageView = NSImageView(frame: NSRect(origin: .zero, size: size))
-        imageView.imageScaling = .scaleProportionallyUpOrDown
-        imageView.animates = true
-        if let url = Bundle.main.url(forResource: "idle", withExtension: "gif") {
-            imageView.image = NSImage(contentsOf: url)
-        }
-        let contextMenu = NSMenu()
-        contextMenu.addItem(menuItem("Open Command Deck", #selector(openChat)))
-        contextMenu.addItem(menuItem("Hide Avatar", #selector(hidePet)))
-        imageView.menu = contextMenu
-        panel.contentView = imageView
+        let hostingView = NSHostingView(rootView: FloatingAvatarHUDView(store: chatStore))
+        hostingView.frame = NSRect(origin: .zero, size: size)
+        panel.contentView = hostingView
 
         if let visible = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 20, y: visible.minY + 20))
+            panel.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 16, y: visible.minY + 16))
         }
-        panel.orderOut(nil)
+        panel.orderFrontRegardless()
         petPanel = panel
     }
 
@@ -483,6 +483,8 @@ struct ChatMessage: Identifiable, Sendable {
     let role: MessageRole
     let text: String
     var apiContent: String? = nil
+    var imageBase64: String? = nil
+    var imageMimeType: String? = nil
     var sources: [SourceCitation] = []
     var modelUsed: String? = nil
     var latencyMs: Int? = nil
@@ -885,8 +887,16 @@ final class ChatStore: ObservableObject {
     @Published var selectedMode: AssistantMode = .engineering
     @Published var speakReplies: Bool
     @Published var webSearchEnabled: Bool
-    @Published var isPetVisible: Bool = false
+    @Published var isPetVisible: Bool = true
     var onTogglePet: ((Bool) -> Void)?
+    var onOpenCommandDeck: (() -> Void)?
+
+    // Interactive Gear-5 Avatar HUD state
+    @Published var isAvatarHUDExpanded: Bool = true
+    @Published var avatarBubbleText: String = "⚡ Gear-5 Avatar Online! Click any superpower orb below, drag & drop files/repos/images onto me, or type a 1-line automation command."
+    @Published var clipboardAlertBadge: String? = nil
+    private var lastClipboardChangeCount: Int = NSPasteboard.general.changeCount
+    private var clipboardWatcherTimer: Timer?
 
     // Live Code Sandbox state
     @Published var sandboxLanguage: String = "python"
@@ -956,6 +966,26 @@ final class ChatStore: ObservableObject {
             webSearchEnabled = false
         } else {
             webSearchEnabled = UserDefaults.standard.bool(forKey: "luffy.webSearchEnabled.v3")
+        }
+        startClipboardWatcher()
+    }
+
+    private func startClipboardWatcher() {
+        clipboardWatcherTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self else { return }
+                let pb = NSPasteboard.general
+                guard pb.changeCount != self.lastClipboardChangeCount else { return }
+                self.lastClipboardChangeCount = pb.changeCount
+                guard let copied = pb.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+                      copied.count >= 12 else { return }
+                let lower = copied.lowercased()
+                if lower.contains("traceback") || lower.contains("error:") || lower.contains("exception") || lower.contains("npm err!") || lower.contains("fatal:") || lower.contains("failed") {
+                    self.clipboardAlertBadge = "⚡ Error in Clipboard — Click 📋 to Fix"
+                } else if copied.hasPrefix("{") || copied.hasPrefix("curl ") || lower.contains("https://github.com/") {
+                    self.clipboardAlertBadge = "📋 Smart Clipboard Ready"
+                }
+            }
         }
     }
 
@@ -1076,6 +1106,11 @@ final class ChatStore: ObservableObject {
         panel.allowsMultipleSelection = false
         panel.canCreateDirectories = true
         guard panel.runModal() == .OK, let url = panel.url else { return }
+        selectProjectFolder(url)
+    }
+
+    func selectProjectFolder(_ url: URL) {
+        guard !isRunningProjectCommand, !isAutopilotRunning else { return }
         do {
             let accessed = url.startAccessingSecurityScopedResource()
             let context = try ProjectWorkspace.scan(root: url)
@@ -1556,7 +1591,167 @@ final class ChatStore: ObservableObject {
         submit(rawText, attachments: attachments, isAutopilot: false)
     }
 
-    private func submit(_ rawText: String, attachments: [TextAttachment], isAutopilot: Bool) {
+    // MARK: - 7 Interactive Gear-5 Avatar Superpowers
+
+    func avatarScanScreen() {
+        isAvatarHUDExpanded = true
+        avatarBubbleText = "👁️ Observation Haki Active: Capturing screen & analyzing with Gemini Vision…"
+        let frontApp = NSWorkspace.shared.frontmostApplication?.localizedName ?? "macOS Desktop"
+        Task {
+            let imgPath = "/tmp/luffy_screen_scan.jpg"
+            let captureCmd = """
+            /usr/sbin/screencapture -x /tmp/luffy_raw_screen.png 2>/dev/null && \
+            /usr/bin/sips -s format jpeg -s formatOptions 75 -Z 1280 /tmp/luffy_raw_screen.png --out "\(imgPath)" >/dev/null 2>&1
+            """
+            _ = await AgentExecutor.runQuickShell(captureCmd)
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: imgPath)), !data.isEmpty {
+                let b64 = data.base64EncodedString()
+                let prompt = "👁️ [SCREEN SCAN — Active App: \(frontApp)] Analyze this screenshot of my screen. If there is an error, bug, terminal failure, or coding problem visible, provide the exact root cause and runnable fix. If it is a UI, diagram, or document, summarize and extract the key actionable engineering insights."
+                submit(prompt, attachments: [], isAutopilot: false, imageBase64: b64, imageMimeType: "image/jpeg")
+            } else {
+                avatarBubbleText = "⚠️ Could not capture screen image (grant Screen Recording permission if prompted), falling back to active process & workspace scan…"
+                submit("Inspect my active macOS environment (frontmost app: \(frontApp)) and recent workspace state in \(AgentExecutor.workspaceRoot.path) to help me debug or automate my current task.", attachments: [], isAutopilot: false)
+            }
+        }
+    }
+
+    func avatarAnalyzeClipboard() {
+        isAvatarHUDExpanded = true
+        clipboardAlertBadge = nil
+        guard let copied = NSPasteboard.general.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines),
+              !copied.isEmpty else {
+            avatarBubbleText = "📋 Clipboard is currently empty! Copy (`⌘C`) any error, code snippet, JSON, cURL, or GitHub URL first."
+            return
+        }
+        let clipped = copied.count > 6000 ? String(copied.prefix(6000)) + "\n...[truncated]" : copied
+        if clipped.lowercased().hasPrefix("https://github.com/") && !clipped.contains("\n") {
+            avatarBubbleText = "🌀 GitHub Repo detected in Clipboard! Cloning & building live interactive demo…"
+            submit("Clone \(clipped) in 1 shell step, inspect its README/files, and immediately output a <luffy_demo> interactive HTML dashboard for it and launch the live demo.", attachments: [], isAutopilot: false)
+            return
+        }
+        avatarBubbleText = "📋 Analyzing copied clipboard content (\(copied.count) chars)…"
+        let prompt = """
+        📋 [SMART CLIPBOARD HAKI] I just copied the following content to my macOS clipboard:
+        ```
+        \(clipped)
+        ```
+        - If it is a compiler error, stack trace, or terminal crash: diagnose the exact root cause and give the drop-in fix.
+        - If it is JSON, SQL, or a cURL command: convert it into clean, production-ready Swift/Python/TypeScript structures and usage code.
+        - If it is code: review, optimize, and fix any bugs.
+        """
+        submit(prompt, attachments: [], isAutopilot: false)
+    }
+
+    func avatarGrabBrowserOrGit() {
+        isAvatarHUDExpanded = true
+        avatarBubbleText = "🌐 Reading active Safari / Chrome tab & Git workspace…"
+        Task {
+            let script = """
+            osascript -e 'tell application "Safari" to if (count of windows) > 0 then return (URL of current tab of front window) & " ||| " & (name of current tab of front window)' 2>/dev/null || \
+            osascript -e 'tell application "Google Chrome" to if (count of windows) > 0 then return (URL of active tab of front window) & " ||| " & (title of active tab of front window)' 2>/dev/null || true
+            """
+            let out = (await AgentExecutor.runQuickShell(script)).trimmingCharacters(in: .whitespacesAndNewlines)
+            if out.contains("http") {
+                let parts = out.components(separatedBy: " ||| ")
+                let url = parts.first?.trimmingCharacters(in: .whitespacesAndNewlines) ?? out
+                let title = parts.count > 1 ? parts[1] : "Active Browser Tab"
+                if url.lowercased().contains("github.com/") {
+                    avatarBubbleText = "🚀 Active GitHub Tab detected (`\(title)`)! Cloning & building live demo…"
+                    submit("Clone \(url) in 1 shell step, inspect its files, and immediately output a <luffy_demo> interactive HTML dashboard for it and launch the live demo.", attachments: [], isAutopilot: false)
+                } else {
+                    avatarBubbleText = "🌐 Summarizing & analyzing active tab: \(title)…"
+                    submit("Fetch and analyze the active browser tab `\(title)` (\(url)). Summarize the key technical points, code, or actionable steps.", attachments: [], isAutopilot: false)
+                }
+            } else {
+                avatarBubbleText = "🔧 Scanning local Git status & recent commits in workspace…"
+                submit("Run a shell check on the git status, recent commits, and modified files in \(projectURL?.path ?? AgentExecutor.workspaceRoot.path) and suggest the next engineering action or commit message.", attachments: [], isAutopilot: false)
+            }
+        }
+    }
+
+    func avatarSystemPulse() {
+        isAvatarHUDExpanded = true
+        avatarBubbleText = "⚡ Scanning active developer ports, CPU processes, and system telemetry…"
+        Task {
+            let cmd = """
+            echo "=== ACTIVE DEV PORTS (3000, 5173, 8000, 8080, 8765) ==="
+            lsof -iTCP -sTCP:LISTEN -P -n 2>/dev/null | grep -E ':(3000|5173|8000|8080|8765)\\b' || echo "No dev ports listening on 3000/5173/8000/8080/8765"
+            echo ""
+            echo "=== TOP 5 CPU PROCESSES ==="
+            ps -Ao pcpu,pmem,comm -r | head -n 6
+            echo ""
+            echo "=== DISK & UPTIME ==="
+            df -h / | tail -n 1 | awk '{print "Disk Free: " $4 " (" $5 " used)"}'
+            uptime
+            """
+            let report = await AgentExecutor.runQuickShell(cmd)
+            avatarBubbleText = "⚡ **macOS Dev-Ops Telemetry Pulse**\n```text\n\(report.trimmingCharacters(in: .whitespacesAndNewlines))\n```"
+        }
+    }
+
+    func avatarKillStuckDevPorts() {
+        isAvatarHUDExpanded = true
+        Task {
+            let cmd = "lsof -ti tcp:3000,5173,8000,8080 | xargs kill -9 2>/dev/null || true"
+            _ = await AgentExecutor.runQuickShell(cmd)
+            avatarBubbleText = "🧹 Freed ports `3000`, `5173`, `8000`, and `8080`! (`:8765` Live Demo port kept alive)."
+        }
+    }
+
+    func handleAvatarDroppedURL(_ url: URL) {
+        isAvatarHUDExpanded = true
+        if url.isFileURL {
+            let path = url.path
+            let ext = url.pathExtension.lowercased()
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: path, isDirectory: &isDir)
+
+            if isDir.boolValue {
+                selectProjectFolder(url)
+                avatarBubbleText = "📂 Linked folder `\(url.lastPathComponent)`! Building interactive live overview…"
+                submit("Inspect the directory `\(path)` in 1 shell step and immediately output a <luffy_demo> interactive HTML architecture & telemetry dashboard for this project.", attachments: [], isAutopilot: false)
+            } else if ["png", "jpg", "jpeg", "webp"].contains(ext) {
+                avatarBubbleText = "🖼️ Analyzing dropped image `\(url.lastPathComponent)` with Gemini Vision…"
+                Task {
+                    let outJpg = "/tmp/luffy_drop_img.jpg"
+                    _ = await AgentExecutor.runQuickShell("/usr/bin/sips -s format jpeg -s formatOptions 75 -Z 1280 \"\(path)\" --out \"\(outJpg)\" >/dev/null 2>&1")
+                    if let data = try? Data(contentsOf: URL(fileURLWithPath: outJpg)), !data.isEmpty {
+                        submit("🖼️ [DROPPED IMAGE: \(url.lastPathComponent)] Analyze this image. If it shows an error or problem, solve it. If it shows a UI design or diagram, generate clean HTML/Tailwind/JS or Swift code for it.", attachments: [], isAutopilot: false, imageBase64: data.base64EncodedString(), imageMimeType: "image/jpeg")
+                    }
+                }
+            } else if let attachment = try? TextAttachment.read(from: url) {
+                avatarBubbleText = "📄 Analyzing dropped file `\(url.lastPathComponent)`…"
+                submit("Analyze, review, and explain or fix any issues in this dropped file (`\(url.lastPathComponent)`).", attachments: [attachment], isAutopilot: false)
+            } else {
+                avatarBubbleText = "📄 Inspecting dropped file `\(url.lastPathComponent)`…"
+                submit("Inspect the file at `\(path)` and summarize or process it.", attachments: [], isAutopilot: false)
+            }
+        } else {
+            let urlStr = url.absoluteString
+            if urlStr.lowercased().contains("github.com/") {
+                avatarBubbleText = "🌀 Dropped GitHub URL! Cloning & building live demo…"
+                submit("Clone \(urlStr) in 1 shell step, inspect its README/files, and immediately output a <luffy_demo> interactive HTML dashboard for it and launch the live demo.", attachments: [], isAutopilot: false)
+            } else {
+                avatarBubbleText = "🌐 Analyzing dropped URL `\(urlStr)`…"
+                submit("Fetch and analyze `\(urlStr)` and summarize key technical details.", attachments: [], isAutopilot: false)
+            }
+        }
+    }
+
+    func handleAvatarDroppedText(_ text: String) {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        isAvatarHUDExpanded = true
+        if trimmed.lowercased().hasPrefix("https://github.com/") && !trimmed.contains("\n") {
+            avatarBubbleText = "🌀 GitHub Repo dropped! Cloning & building live demo…"
+            submit("Clone \(trimmed) in 1 shell step, inspect its README/files, and immediately output a <luffy_demo> interactive HTML dashboard for it and launch the live demo.", attachments: [], isAutopilot: false)
+        } else {
+            avatarBubbleText = "⚡ Processing dropped text/snippet…"
+            submit("Analyze, solve, or automate the following dropped text/code:\n```\n\(trimmed)\n```", attachments: [], isAutopilot: false)
+        }
+    }
+
+    private func submit(_ rawText: String, attachments: [TextAttachment], isAutopilot: Bool, imageBase64: String? = nil, imageMimeType: String? = nil) {
         let text = rawText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard (!text.isEmpty || !attachments.isEmpty), !isSending else { return }
         guard !isAutopilotRunning || isAutopilot else {
@@ -1572,14 +1767,18 @@ final class ChatStore: ObservableObject {
             return
         }
 
-        if !isAutopilot, attachments.isEmpty, let appName = MacActionRouter.appName(for: text) {
+        if !isAutopilot, attachments.isEmpty, imageBase64 == nil, let appName = MacActionRouter.appName(for: text) {
             messages.append(ChatMessage(role: .user, text: text))
             isSending = true
             MacActionRouter.launch(appName) { [weak self] result in
                 guard let self else { return }
                 switch result {
-                case .success: self.messages.append(ChatMessage(role: .assistant, text: "Opening \(appName)."))
-                case .failure(let error): self.messages.append(ChatMessage(role: .assistant, text: "I couldn't open \(appName): \(error.localizedDescription)"))
+                case .success:
+                    self.messages.append(ChatMessage(role: .assistant, text: "Opening \(appName)."))
+                    self.avatarBubbleText = "🚀 Opened \(appName)."
+                case .failure(let error):
+                    self.messages.append(ChatMessage(role: .assistant, text: "I couldn't open \(appName): \(error.localizedDescription)"))
+                    self.avatarBubbleText = "⚠️ Couldn't open \(appName): \(error.localizedDescription)"
                 }
                 self.isSending = false
             }
@@ -1590,6 +1789,7 @@ final class ChatStore: ObservableObject {
         guard let apiKey = KeychainStore.read(for: provider) else {
             hasAPIKey = false
             errorMessage = "Paste your \(provider.keyName) in the top banner or Settings to start."
+            avatarBubbleText = "🔑 Paste your \(provider.keyName) in Settings to start."
             if isAutopilot { completeAutopilot("Stopped because no API key is available. No proposal was applied.") }
             return
         }
@@ -1600,10 +1800,11 @@ final class ChatStore: ObservableObject {
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
         let apiContent = text + attachments.map(\.modelContext).joined()
-        messages.append(ChatMessage(role: .user, text: displayText, apiContent: apiContent))
+        messages.append(ChatMessage(role: .user, text: displayText, apiContent: apiContent, imageBase64: imageBase64, imageMimeType: imageMimeType))
         isSending = true
+        avatarBubbleText = "⚡ Thinking across 9-Pool Gemini Mesh…"
         let recentMessages = Array(messages.suffix(18))
-        let wantsProjectChanges = selectedMode.supportsProjectWork && projectURL != nil
+        let wantsProjectChanges = selectedMode.supportsProjectWork && projectURL != nil && imageBase64 == nil
         if wantsProjectChanges, let projectURL {
             do { projectContext = try ProjectWorkspace.scan(root: projectURL) }
             catch {
@@ -1667,6 +1868,7 @@ final class ChatStore: ObservableObject {
                     stepCount += 1
                     let desc = action.description ?? "Executing \(action.tool)…"
                     self.agentStatusStep = "⚡ Agent Step \(stepCount)/\(maxAgentSteps): \(desc)"
+                    self.avatarBubbleText = "⚡ Step \(stepCount): \(desc)"
                     let toolOutput = await AgentExecutor.execute(action)
                     executionTraceLog.append("**Step \(stepCount) (`\(action.tool)`)**: \(desc)")
 
@@ -1674,7 +1876,6 @@ final class ChatStore: ObservableObject {
                         let port = action.port ?? 8765
                         let entry = action.entry ?? "index.html"
                         launchedDemoURL = "http://127.0.0.1:\(port)/\(entry)"
-                        // If luffy_demo already built and launched the browser, we can break immediately if text also has summary, or do 1 final summary turn
                         if action.tool == "luffy_demo" {
                             break
                         }
@@ -1721,6 +1922,8 @@ final class ChatStore: ObservableObject {
                     finalDisplay = traceHeader + cleanedText
                 }
 
+                self.avatarBubbleText = cleanedText.isEmpty ? finalDisplay : cleanedText
+
                 messages.append(ChatMessage(
                     role: .assistant,
                     text: finalDisplay,
@@ -1744,6 +1947,7 @@ final class ChatStore: ObservableObject {
                 }
             } catch {
                 self.agentStatusStep = ""
+                self.avatarBubbleText = "⚠️ Error: \(error.localizedDescription)"
                 errorMessage = error.localizedDescription
                 if isAutopilot { completeAutopilot("Stopped because the task request failed. No proposal was applied.") }
             }
@@ -1952,6 +2156,33 @@ enum AgentExecutor {
 
         default:
             return "Unsupported tool '\(action.tool)'."
+        }
+    }
+
+    static func runQuickShell(_ command: String) async -> String {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                let proc = Process()
+                let pipe = Pipe()
+                proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
+                proc.arguments = ["-lc", command]
+                proc.currentDirectoryURL = workspaceRoot
+                proc.standardOutput = pipe
+                proc.standardError = pipe
+                do {
+                    try proc.run()
+                } catch {
+                    continuation.resume(returning: "")
+                    return
+                }
+                let deadline = Date().addingTimeInterval(15.0)
+                while proc.isRunning && Date() < deadline {
+                    Thread.sleep(forTimeInterval: 0.05)
+                }
+                if proc.isRunning { proc.terminate() }
+                let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                continuation.resume(returning: String(data: data, encoding: .utf8) ?? "")
+            }
         }
     }
 
@@ -2450,9 +2681,18 @@ enum GeminiClient {
         let contents: [[String: Any]] = history.enumerated().map { index, message in
             var content = message.apiContent ?? message.text
             if index == history.count - 1, message.role == .user, let projectContext { content += projectContext }
+            var parts: [[String: Any]] = [["text": content]]
+            if let imgBase64 = message.imageBase64, !imgBase64.isEmpty {
+                parts.append([
+                    "inline_data": [
+                        "mime_type": message.imageMimeType ?? "image/jpeg",
+                        "data": imgBase64
+                    ]
+                ])
+            }
             return [
                 "role": message.role == .assistant ? "model" : "user",
-                "parts": [["text": content]]
+                "parts": parts
             ]
         }
         var generationConfig: [String: Any] = ["maxOutputTokens": 16384]
@@ -4305,3 +4545,314 @@ struct SettingsView: View {
         }
     }
 }
+
+struct AnimatedAvatarGIFView: NSViewRepresentable {
+    func makeNSView(context: Context) -> NSImageView {
+        let imageView = NSImageView()
+        imageView.imageScaling = .scaleProportionallyUpOrDown
+        imageView.animates = true
+        imageView.canDrawSubviewsIntoLayer = true
+        if let url = Bundle.main.url(forResource: "idle", withExtension: "gif") {
+            imageView.image = NSImage(contentsOf: url)
+        }
+        return imageView
+    }
+
+    func updateNSView(_ nsView: NSImageView, context: Context) {
+        nsView.animates = true
+    }
+}
+
+struct FloatingAvatarHUDView: View {
+    @ObservedObject var store: ChatStore
+    @StateObject private var voiceInput = VoiceInputManager()
+    @State private var quickCommand: String = ""
+    @State private var isDropTargeted: Bool = false
+    @State private var copiedFeedback: Bool = false
+
+    var body: some View {
+        VStack(alignment: .trailing, spacing: 10) {
+            Spacer(minLength: 0)
+
+            if store.isAvatarHUDExpanded {
+                // 1. Holographic Speech Bubble
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(store.isSending ? Color.orange : Color(red: 0.0, green: 0.95, blue: 0.65))
+                            .frame(width: 7, height: 7)
+                        Text(store.isSending ? "GEAR-5 AGENT EXECUTING…" : "LUFFY AVATAR HUD // 9x MESH")
+                            .font(.system(size: 9, weight: .black, design: .monospaced))
+                            .foregroundStyle(Color.cyan)
+                        Spacer()
+                        Button {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(store.avatarBubbleText, forType: .string)
+                            copiedFeedback = true
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copiedFeedback = false }
+                        } label: {
+                            Text(copiedFeedback ? "Copied!" : "Copy")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.white.opacity(0.08), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+
+                        Button {
+                            store.avatarKillStuckDevPorts()
+                        } label: {
+                            Text("Free Ports")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.orange.opacity(0.18), in: Capsule())
+                                .foregroundStyle(.orange)
+                        }
+                        .buttonStyle(.plain)
+                        .help("Kill stuck processes on ports 3000, 5173, 8000, 8080")
+
+                        Button {
+                            store.onOpenCommandDeck?()
+                        } label: {
+                            Text("Full Deck")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(Color.cyan.opacity(0.2), in: Capsule())
+                                .foregroundStyle(Color.cyan)
+                        }
+                        .buttonStyle(.plain)
+                    }
+
+                    ScrollView {
+                        Text(store.avatarBubbleText)
+                            .font(.system(size: 11.5, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.92))
+                            .textSelection(.enabled)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                    .frame(maxHeight: 145)
+                }
+                .padding(12)
+                .background(
+                    RoundedRectangle(cornerRadius: 14)
+                        .fill(Color(red: 0.04, green: 0.08, blue: 0.15).opacity(0.95))
+                )
+                .overlay(
+                    RoundedRectangle(cornerRadius: 14)
+                        .stroke(isDropTargeted ? Color.green : Color.cyan.opacity(0.45), lineWidth: isDropTargeted ? 2.2 : 1.2)
+                )
+                .shadow(color: .black.opacity(0.55), radius: 14, y: 6)
+
+                // 2. 6 Gear-5 Superpower Action Orbs
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                    orbButton(title: "Scan Screen", icon: "eye.fill", tint: .cyan) {
+                        store.avatarScanScreen()
+                    }
+                    orbButton(title: "Clipboard Fix", icon: "doc.on.clipboard.fill", tint: Color(red: 0.0, green: 0.95, blue: 0.65)) {
+                        store.avatarAnalyzeClipboard()
+                    }
+                    orbButton(title: "Browser / Git", icon: "safari.fill", tint: .purple) {
+                        store.avatarGrabBrowserOrGit()
+                    }
+                    orbButton(title: voiceInput.isRecording ? "Stop Mic" : "Voice Cmd", icon: voiceInput.isRecording ? "stop.circle.fill" : "mic.fill", tint: voiceInput.isRecording ? .red : .orange) {
+                        if voiceInput.isRecording {
+                            voiceInput.stop()
+                            let spoken = voiceInput.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !spoken.isEmpty {
+                                store.send(spoken)
+                            }
+                        } else {
+                            store.avatarBubbleText = "🎙️ Listening… speak your command and tap 'Stop Mic' to execute!"
+                            voiceInput.start()
+                        }
+                    }
+                    orbButton(title: "Port & Sys", icon: "waveform.path.ecg", tint: .yellow) {
+                        store.avatarSystemPulse()
+                    }
+                    orbButton(title: "Demo :8765", icon: "globe", tint: .mint) {
+                        Task {
+                            _ = await AgentExecutor.execute(AgentActionPayload(
+                                tool: "serve_and_open",
+                                command: nil,
+                                path: nil,
+                                content: nil,
+                                directory: AgentExecutor.workspaceRoot.appendingPathComponent("live-demo").path,
+                                port: 8765,
+                                entry: "index.html",
+                                url: "http://127.0.0.1:8765/index.html",
+                                description: "Opening live demo"
+                            ))
+                            store.avatarBubbleText = "🌐 Opened Live Interactive Demo at http://127.0.0.1:8765/index.html"
+                        }
+                    }
+                }
+                .padding(8)
+                .background(
+                    RoundedRectangle(cornerRadius: 13)
+                        .fill(Color(red: 0.05, green: 0.09, blue: 0.17).opacity(0.94))
+                )
+                .overlay(RoundedRectangle(cornerRadius: 13).stroke(Color.white.opacity(0.12)))
+
+                // 3. Mini Spotlight Command Pill
+                HStack(spacing: 8) {
+                    Image(systemName: "bolt.fill")
+                        .font(.system(size: 11))
+                        .foregroundStyle(Color.cyan)
+                    TextField("Ask or automate anything (or drop files here)…", text: $quickCommand)
+                        .textFieldStyle(.plain)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.white)
+                        .onSubmit(submitQuickCommand)
+                    Button(action: submitQuickCommand) {
+                        Image(systemName: "arrow.up.circle.fill")
+                            .font(.system(size: 18))
+                            .foregroundStyle(Color.cyan)
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(quickCommand.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || store.isSending)
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .background(
+                    Capsule()
+                        .fill(Color(red: 0.04, green: 0.08, blue: 0.15).opacity(0.96))
+                )
+                .overlay(Capsule().stroke(Color.cyan.opacity(0.45), lineWidth: 1.2))
+                .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
+            }
+
+            // 4. Bottom-Right Floating Luffy Avatar + Black Hole Drop Zone + Clipboard Badge
+            HStack(spacing: 8) {
+                if let badge = store.clipboardAlertBadge {
+                    Button {
+                        store.avatarAnalyzeClipboard()
+                    } label: {
+                        Text(badge)
+                            .font(.system(size: 10, weight: .bold, design: .monospaced))
+                            .foregroundStyle(.black)
+                            .padding(.horizontal, 10)
+                            .padding(.vertical, 6)
+                            .background(Color(red: 1.0, green: 0.78, blue: 0.18), in: Capsule())
+                            .shadow(color: .orange.opacity(0.6), radius: 8)
+                    }
+                    .buttonStyle(.plain)
+                }
+
+                ZStack(alignment: .topTrailing) {
+                    Circle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    isDropTargeted ? Color.green.opacity(0.45) : Color.cyan.opacity(0.28),
+                                    Color(red: 0.04, green: 0.08, blue: 0.16).opacity(0.92)
+                                ],
+                                center: .center,
+                                startRadius: 6,
+                                endRadius: 46
+                            )
+                        )
+                        .frame(width: 82, height: 82)
+                        .overlay(
+                            Circle()
+                                .stroke(
+                                    isDropTargeted ? Color.green : (store.isSending ? Color.orange : Color.cyan),
+                                    lineWidth: isDropTargeted ? 3 : 2
+                                )
+                        )
+                        .shadow(color: Color.cyan.opacity(0.45), radius: 10)
+
+                    AnimatedAvatarGIFView()
+                        .frame(width: 72, height: 78)
+                        .clipShape(Circle())
+                        .onTapGesture {
+                            withAnimation(.spring(response: 0.25, dampingFraction: 0.78)) {
+                                store.isAvatarHUDExpanded.toggle()
+                            }
+                        }
+                        .help("Click Luffy to expand/collapse Gear-5 HUD · Drag & drop any file, screenshot, or GitHub URL onto Luffy!")
+
+                    Button {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.78)) {
+                            store.isAvatarHUDExpanded.toggle()
+                        }
+                    } label: {
+                        Image(systemName: store.isAvatarHUDExpanded ? "chevron.down.circle.fill" : "bolt.circle.fill")
+                            .font(.system(size: 16, weight: .bold))
+                            .foregroundStyle(Color.cyan)
+                            .background(Color.black, in: Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: 2, y: -2)
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: 390, height: 480, alignment: .bottomTrailing)
+        .onDrop(of: [.fileURL, .url, .plainText], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers: providers)
+        }
+    }
+
+    private func orbButton(title: String, icon: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 5) {
+                Image(systemName: icon)
+                    .font(.system(size: 10.5, weight: .bold))
+                    .foregroundStyle(tint)
+                Text(title)
+                    .font(.system(size: 9.5, weight: .bold, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.92))
+                    .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 7)
+            .padding(.horizontal, 6)
+            .background(tint.opacity(0.13), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(tint.opacity(0.38), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func submitQuickCommand() {
+        let cmd = quickCommand.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !cmd.isEmpty, !store.isSending else { return }
+        quickCommand = ""
+        store.send(cmd)
+    }
+
+    private func handleDrop(providers: [NSItemProvider]) -> Bool {
+        for provider in providers {
+            if provider.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) {
+                provider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                    if let data = item as? Data, let url = URL(dataRepresentation: data, relativeTo: nil) {
+                        Task { @MainActor in store.handleAvatarDroppedURL(url) }
+                    } else if let url = item as? URL {
+                        Task { @MainActor in store.handleAvatarDroppedURL(url) }
+                    }
+                }
+                return true
+            }
+            if provider.hasItemConformingToTypeIdentifier(UTType.url.identifier) {
+                provider.loadItem(forTypeIdentifier: UTType.url.identifier, options: nil) { item, _ in
+                    if let url = item as? URL {
+                        Task { @MainActor in store.handleAvatarDroppedURL(url) }
+                    } else if let data = item as? Data, let str = String(data: data, encoding: .utf8), let url = URL(string: str) {
+                        Task { @MainActor in store.handleAvatarDroppedURL(url) }
+                    }
+                }
+                return true
+            }
+            if provider.hasItemConformingToTypeIdentifier(UTType.plainText.identifier) {
+                provider.loadItem(forTypeIdentifier: UTType.plainText.identifier, options: nil) { item, _ in
+                    if let str = item as? String {
+                        Task { @MainActor in store.handleAvatarDroppedText(str) }
+                    } else if let data = item as? Data, let str = String(data: data, encoding: .utf8) {
+                        Task { @MainActor in store.handleAvatarDroppedText(str) }
+                    }
+                }
+                return true
+            }
+        }
+        return false
+    }
+}
+
