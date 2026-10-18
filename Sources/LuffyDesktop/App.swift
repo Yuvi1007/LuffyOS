@@ -25,6 +25,12 @@ struct LuffyDesktopApp {
 final class InteractiveAvatarPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { false }
+
+    // Allow the full Luffy character and HUD to be dragged anywhere across the entire screen
+    // without macOS clamping the transparent top area against the menu bar.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        return frameRect
+    }
 }
 
 @MainActor
@@ -36,7 +42,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem?
     private var launchMenuItem: NSMenuItem?
     private var chatToggleMenuItem: NSMenuItem?
-    private var hotKeyRef: EventHotKeyRef?
+    private var hotKeyRefDeck: EventHotKeyRef?
+    private var hotKeyRefAvatar: EventHotKeyRef?
+    private var hotKeyRefAvatarVisibility: EventHotKeyRef?
     private var hotKeyHandlerRef: EventHandlerRef?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -46,7 +54,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerGlobalHotKey()
         enableLaunchAtLoginIfNeeded()
 
-        // Show the Interactive Gear-5 Avatar HUD at the bottom-right corner
+        // Show the Full-Body Interactive Gear-5 Luffy Avatar at the bottom-right corner
         petPanel?.orderFrontRegardless()
         chatStore.isPetVisible = true
         chatStore.onTogglePet = { [weak self] visible in
@@ -59,6 +67,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         chatStore.onOpenCommandDeck = { [weak self] in
             self?.openChat()
+        }
+        chatStore.onCenterAvatar = { [weak self] in
+            self?.centerPetOnScreen()
         }
 
         NSApp.activate(ignoringOtherApps: true)
@@ -75,7 +86,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
-        if let hotKeyRef { UnregisterEventHotKey(hotKeyRef) }
+        if let hotKeyRefDeck { UnregisterEventHotKey(hotKeyRefDeck) }
+        if let hotKeyRefAvatar { UnregisterEventHotKey(hotKeyRefAvatar) }
+        if let hotKeyRefAvatarVisibility { UnregisterEventHotKey(hotKeyRefAvatarVisibility) }
         if let hotKeyHandlerRef { RemoveEventHandler(hotKeyHandlerRef) }
     }
 
@@ -86,14 +99,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func createStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         item.button?.image = NSImage(systemSymbolName: "cpu.fill", accessibilityDescription: "Luffy Neural OS")
-        item.button?.toolTip = "Luffy Neural Engineering OS (⌘1)"
+        item.button?.toolTip = "Luffy Neural OS — ⌘2 Activate Avatar · ⌥Space Show/Hide Avatar · ⌘1 Command Deck"
 
         let menu = NSMenu()
+        menu.addItem(menuItem("Activate / Toggle Luffy Avatar HUD (⌘2)", #selector(activateOrToggleAvatarHUD)))
+        menu.addItem(menuItem("Show / Hide Full Luffy Character (⌥Space)", #selector(togglePetVisibility)))
+        menu.addItem(menuItem("Center Luffy on Screen", #selector(centerPetOnScreen)))
+        menu.addItem(.separator())
         let chatToggle = menuItem("Show / Hide Command Deck (⌘1)", #selector(toggleChatWindow))
         menu.addItem(chatToggle)
         chatToggleMenuItem = chatToggle
-        menu.addItem(menuItem("Show Interactive Avatar HUD", #selector(showPet)))
-        menu.addItem(menuItem("Hide Interactive Avatar HUD", #selector(hidePet)))
         menu.addItem(.separator())
         menu.addItem(menuItem("Settings & Quota Mesh…", #selector(openSettings)))
         let launch = menuItem("Launch at Login", #selector(toggleLaunchAtLogin))
@@ -129,7 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func createPetPanel() {
-        let size = NSSize(width: 390, height: 480)
+        let size = NSSize(width: 410, height: 610)
         let panel = InteractiveAvatarPanel(
             contentRect: NSRect(origin: .zero, size: size),
             styleMask: [.borderless, .nonactivatingPanel],
@@ -149,7 +164,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         panel.contentView = hostingView
 
         if let visible = NSScreen.main?.visibleFrame {
-            panel.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 16, y: visible.minY + 16))
+            panel.setFrameOrigin(NSPoint(x: visible.maxX - size.width - 18, y: visible.minY + 12))
         }
         panel.orderFrontRegardless()
         petPanel = panel
@@ -173,6 +188,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chatWindow.makeKeyAndOrderFront(nil)
     }
 
+    @objc private func activateOrToggleAvatarHUD() {
+        guard let petPanel else { return }
+        if !chatStore.isPetVisible {
+            chatStore.isPetVisible = true
+            chatStore.isAvatarHUDExpanded = true
+            petPanel.makeKeyAndOrderFront(nil)
+            petPanel.orderFrontRegardless()
+            chatStore.focusAvatarInputTrigger &+= 1
+            return
+        }
+        if !chatStore.isAvatarHUDExpanded {
+            chatStore.isAvatarHUDExpanded = true
+            petPanel.makeKeyAndOrderFront(nil)
+            petPanel.orderFrontRegardless()
+            chatStore.focusAvatarInputTrigger &+= 1
+        } else {
+            chatStore.isAvatarHUDExpanded = false
+        }
+    }
+
+    @objc private func togglePetVisibility() {
+        if chatStore.isPetVisible {
+            hidePet()
+        } else {
+            showPet()
+            chatStore.isAvatarHUDExpanded = true
+            petPanel?.makeKeyAndOrderFront(nil)
+            chatStore.focusAvatarInputTrigger &+= 1
+        }
+    }
+
+    @objc private func centerPetOnScreen() {
+        guard let petPanel, let visible = NSScreen.main?.visibleFrame else { return }
+        let size = petPanel.frame.size
+        let newOrigin = NSPoint(
+            x: visible.midX - size.width / 2,
+            y: visible.midY - size.height / 2
+        )
+        petPanel.setFrameOrigin(newOrigin)
+        showPet()
+        petPanel.makeKeyAndOrderFront(nil)
+    }
+
     private func registerGlobalHotKey() {
         var eventType = EventTypeSpec(
             eventClass: OSType(kEventClassKeyboard),
@@ -192,12 +250,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     nil,
                     &pressedHotKey
                 )
-                guard parameterStatus == noErr, pressedHotKey.signature == luffyHotKeySignature, pressedHotKey.id == 1 else {
+                guard parameterStatus == noErr, pressedHotKey.signature == luffyHotKeySignature else {
                     return OSStatus(eventNotHandledErr)
                 }
                 let delegate = Unmanaged<AppDelegate>.fromOpaque(userData).takeUnretainedValue()
                 MainActor.assumeIsolated {
-                    delegate.toggleChatWindow()
+                    switch pressedHotKey.id {
+                    case 1:
+                        delegate.toggleChatWindow()
+                    case 2:
+                        delegate.activateOrToggleAvatarHUD()
+                    case 3:
+                        delegate.togglePetVisibility()
+                    default:
+                        break
+                    }
                 }
                 return noErr
             },
@@ -210,18 +277,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             chatToggleMenuItem?.title = "Show / Hide Command Deck (⌘1 unavailable)"
             return
         }
-        let hotKeyID = EventHotKeyID(signature: luffyHotKeySignature, id: 1)
-        let registerStatus = RegisterEventHotKey(
+        // ⌘1 -> Toggle Full Command Deck Window
+        let hotKeyDeckID = EventHotKeyID(signature: luffyHotKeySignature, id: 1)
+        _ = RegisterEventHotKey(
             UInt32(kVK_ANSI_1),
             UInt32(cmdKey),
-            hotKeyID,
+            hotKeyDeckID,
             GetApplicationEventTarget(),
             OptionBits(kEventHotKeyExclusive),
-            &hotKeyRef
+            &hotKeyRefDeck
         )
-        if registerStatus != noErr {
-            chatToggleMenuItem?.title = "Show / Hide Command Deck (⌘1 unavailable)"
-        }
+        // ⌘2 -> Activate / Toggle Floating Luffy Avatar HUD
+        let hotKeyAvatarID = EventHotKeyID(signature: luffyHotKeySignature, id: 2)
+        _ = RegisterEventHotKey(
+            UInt32(kVK_ANSI_2),
+            UInt32(cmdKey),
+            hotKeyAvatarID,
+            GetApplicationEventTarget(),
+            OptionBits(kEventHotKeyExclusive),
+            &hotKeyRefAvatar
+        )
+        // ⌥Space -> Summon / Hide Full Luffy Avatar Anywhere
+        let hotKeyVisID = EventHotKeyID(signature: luffyHotKeySignature, id: 3)
+        _ = RegisterEventHotKey(
+            UInt32(kVK_Space),
+            UInt32(optionKey),
+            hotKeyVisID,
+            GetApplicationEventTarget(),
+            OptionBits(kEventHotKeyExclusive),
+            &hotKeyRefAvatarVisibility
+        )
     }
 
     @objc private func showPet() {
@@ -890,10 +975,12 @@ final class ChatStore: ObservableObject {
     @Published var isPetVisible: Bool = true
     var onTogglePet: ((Bool) -> Void)?
     var onOpenCommandDeck: (() -> Void)?
+    var onCenterAvatar: (() -> Void)?
 
     // Interactive Gear-5 Avatar HUD state
     @Published var isAvatarHUDExpanded: Bool = true
-    @Published var avatarBubbleText: String = "⚡ Gear-5 Avatar Online! Click any superpower orb below, drag & drop files/repos/images onto me, or type a 1-line automation command."
+    @Published var focusAvatarInputTrigger: Int = 0
+    @Published var avatarBubbleText: String = "⚡ Gear-5 Full Luffy Online! Drag my character anywhere on screen, press ⌘2 anytime to toggle this HUD, or click any superpower orb below."
     @Published var clipboardAlertBadge: String? = nil
     private var lastClipboardChangeCount: Int = NSPasteboard.general.changeCount
     private var clipboardWatcherTimer: Timer?
@@ -4546,20 +4633,66 @@ struct SettingsView: View {
     }
 }
 
-struct AnimatedAvatarGIFView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSImageView {
-        let imageView = NSImageView()
+final class DraggableLuffyImageView: NSImageView {
+    var onSingleClick: (() -> Void)?
+    private var initialMouseLocation: NSPoint = .zero
+    private var initialWindowOrigin: NSPoint = .zero
+    private var didDrag: Bool = false
+
+    override var mouseDownCanMoveWindow: Bool { true }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard let window = self.window else { return }
+        initialMouseLocation = NSEvent.mouseLocation
+        initialWindowOrigin = window.frame.origin
+        didDrag = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window = self.window else { return }
+        let currentLocation = NSEvent.mouseLocation
+        let dx = currentLocation.x - initialMouseLocation.x
+        let dy = currentLocation.y - initialMouseLocation.y
+        if hypot(dx, dy) > 4 {
+            didDrag = true
+        }
+        if didDrag {
+            window.setFrameOrigin(NSPoint(
+                x: initialWindowOrigin.x + dx,
+                y: initialWindowOrigin.y + dy
+            ))
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if !didDrag {
+            onSingleClick?()
+        }
+    }
+}
+
+struct DraggableFullLuffyView: NSViewRepresentable {
+    var onTap: () -> Void
+
+    func makeNSView(context: Context) -> DraggableLuffyImageView {
+        let imageView = DraggableLuffyImageView()
         imageView.imageScaling = .scaleProportionallyUpOrDown
         imageView.animates = true
         imageView.canDrawSubviewsIntoLayer = true
+        imageView.onSingleClick = onTap
         if let url = Bundle.main.url(forResource: "idle", withExtension: "gif") {
             imageView.image = NSImage(contentsOf: url)
         }
         return imageView
     }
 
-    func updateNSView(_ nsView: NSImageView, context: Context) {
+    func updateNSView(_ nsView: DraggableLuffyImageView, context: Context) {
         nsView.animates = true
+        nsView.onSingleClick = onTap
     }
 }
 
@@ -4569,9 +4702,10 @@ struct FloatingAvatarHUDView: View {
     @State private var quickCommand: String = ""
     @State private var isDropTargeted: Bool = false
     @State private var copiedFeedback: Bool = false
+    @FocusState private var isCommandFocused: Bool
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 10) {
+        VStack(alignment: .trailing, spacing: 8) {
             Spacer(minLength: 0)
 
             if store.isAvatarHUDExpanded {
@@ -4581,7 +4715,7 @@ struct FloatingAvatarHUDView: View {
                         Circle()
                             .fill(store.isSending ? Color.orange : Color(red: 0.0, green: 0.95, blue: 0.65))
                             .frame(width: 7, height: 7)
-                        Text(store.isSending ? "GEAR-5 AGENT EXECUTING…" : "LUFFY AVATAR HUD // 9x MESH")
+                        Text(store.isSending ? "GEAR-5 AGENT EXECUTING…" : "LUFFY HUD (⌘2) · HIDE (⌥SPACE)")
                             .font(.system(size: 9, weight: .black, design: .monospaced))
                             .foregroundStyle(Color.cyan)
                         Spacer()
@@ -4613,7 +4747,7 @@ struct FloatingAvatarHUDView: View {
                         Button {
                             store.onOpenCommandDeck?()
                         } label: {
-                            Text("Full Deck")
+                            Text("Full Deck (⌘1)")
                                 .font(.system(size: 9, weight: .bold))
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Color.cyan.opacity(0.2), in: Capsule())
@@ -4629,9 +4763,9 @@ struct FloatingAvatarHUDView: View {
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxHeight: 145)
+                    .frame(maxHeight: 130)
                 }
-                .padding(12)
+                .padding(11)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color(red: 0.04, green: 0.08, blue: 0.15).opacity(0.95))
@@ -4701,6 +4835,7 @@ struct FloatingAvatarHUDView: View {
                         .textFieldStyle(.plain)
                         .font(.system(size: 12))
                         .foregroundStyle(.white)
+                        .focused($isCommandFocused)
                         .onSubmit(submitQuickCommand)
                     Button(action: submitQuickCommand) {
                         Image(systemName: "arrow.up.circle.fill")
@@ -4720,73 +4855,71 @@ struct FloatingAvatarHUDView: View {
                 .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
             }
 
-            // 4. Bottom-Right Floating Luffy Avatar + Black Hole Drop Zone + Clipboard Badge
-            HStack(spacing: 8) {
-                if let badge = store.clipboardAlertBadge {
-                    Button {
-                        store.avatarAnalyzeClipboard()
-                    } label: {
-                        Text(badge)
-                            .font(.system(size: 10, weight: .bold, design: .monospaced))
-                            .foregroundStyle(.black)
-                            .padding(.horizontal, 10)
-                            .padding(.vertical, 6)
-                            .background(Color(red: 1.0, green: 0.78, blue: 0.18), in: Capsule())
-                            .shadow(color: .orange.opacity(0.6), radius: 8)
-                    }
-                    .buttonStyle(.plain)
-                }
-
-                ZStack(alignment: .topTrailing) {
-                    Circle()
-                        .fill(
-                            RadialGradient(
-                                colors: [
-                                    isDropTargeted ? Color.green.opacity(0.45) : Color.cyan.opacity(0.28),
-                                    Color(red: 0.04, green: 0.08, blue: 0.16).opacity(0.92)
-                                ],
-                                center: .center,
-                                startRadius: 6,
-                                endRadius: 46
-                            )
-                        )
-                        .frame(width: 82, height: 82)
-                        .overlay(
-                            Circle()
-                                .stroke(
-                                    isDropTargeted ? Color.green : (store.isSending ? Color.orange : Color.cyan),
-                                    lineWidth: isDropTargeted ? 3 : 2
-                                )
-                        )
-                        .shadow(color: Color.cyan.opacity(0.45), radius: 10)
-
-                    AnimatedAvatarGIFView()
-                        .frame(width: 72, height: 78)
-                        .clipShape(Circle())
-                        .onTapGesture {
-                            withAnimation(.spring(response: 0.25, dampingFraction: 0.78)) {
-                                store.isAvatarHUDExpanded.toggle()
-                            }
+            // 4. Full-Body Unclipped Luffy Character (192x208) + Whole-Screen Drag + Shortcut Pill
+            HStack(alignment: .bottom, spacing: 10) {
+                VStack(alignment: .trailing, spacing: 6) {
+                    if let badge = store.clipboardAlertBadge {
+                        Button {
+                            store.avatarAnalyzeClipboard()
+                        } label: {
+                            Text(badge)
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.black)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 6)
+                                .background(Color(red: 1.0, green: 0.78, blue: 0.18), in: Capsule())
+                                .shadow(color: .orange.opacity(0.6), radius: 8)
                         }
-                        .help("Click Luffy to expand/collapse Gear-5 HUD · Drag & drop any file, screenshot, or GitHub URL onto Luffy!")
+                        .buttonStyle(.plain)
+                    }
 
                     Button {
                         withAnimation(.spring(response: 0.25, dampingFraction: 0.78)) {
                             store.isAvatarHUDExpanded.toggle()
                         }
                     } label: {
-                        Image(systemName: store.isAvatarHUDExpanded ? "chevron.down.circle.fill" : "bolt.circle.fill")
-                            .font(.system(size: 16, weight: .bold))
-                            .foregroundStyle(Color.cyan)
-                            .background(Color.black, in: Circle())
+                        HStack(spacing: 5) {
+                            Image(systemName: store.isAvatarHUDExpanded ? "chevron.down.circle.fill" : "bolt.circle.fill")
+                                .font(.system(size: 12, weight: .bold))
+                                .foregroundStyle(Color.cyan)
+                            Text(store.isAvatarHUDExpanded ? "Collapse HUD (⌘2)" : "Gear-5 HUD (⌘2)")
+                                .font(.system(size: 10, weight: .bold, design: .monospaced))
+                                .foregroundStyle(.white)
+                        }
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(Color(red: 0.04, green: 0.08, blue: 0.16).opacity(0.92), in: Capsule())
+                        .overlay(Capsule().stroke(Color.cyan.opacity(0.55), lineWidth: 1))
+                        .shadow(color: .black.opacity(0.45), radius: 6)
                     }
                     .buttonStyle(.plain)
-                    .offset(x: 2, y: -2)
+                }
+
+                // FULL-BODY LUFFY CHARACTER (NO CLIPPING, DRAGGABLE ANYWHERE ON SCREEN)
+                ZStack(alignment: .bottom) {
+                    if isDropTargeted {
+                        RoundedRectangle(cornerRadius: 20)
+                            .stroke(Color.green, style: StrokeStyle(lineWidth: 3, dash: [6]))
+                            .frame(width: 196, height: 212)
+                            .background(Color.green.opacity(0.15), in: RoundedRectangle(cornerRadius: 20))
+                    }
+
+                    DraggableFullLuffyView {
+                        withAnimation(.spring(response: 0.25, dampingFraction: 0.78)) {
+                            store.isAvatarHUDExpanded.toggle()
+                        }
+                    }
+                    .frame(width: 192, height: 208)
+                    .shadow(color: store.isSending ? Color.orange.opacity(0.65) : Color.cyan.opacity(0.35), radius: 12)
+                    .help("Drag Luffy anywhere on your screen! Click Luffy (or press ⌘2) to toggle Gear-5 HUD · Press ⌥Space to show/hide Luffy.")
                 }
             }
         }
-        .padding(12)
-        .frame(width: 390, height: 480, alignment: .bottomTrailing)
+        .padding(10)
+        .frame(width: 410, height: 610, alignment: .bottomTrailing)
+        .onChange(of: store.focusAvatarInputTrigger) { _ in
+            isCommandFocused = true
+        }
         .onDrop(of: [.fileURL, .url, .plainText], isTargeted: $isDropTargeted) { providers in
             handleDrop(providers: providers)
         }
