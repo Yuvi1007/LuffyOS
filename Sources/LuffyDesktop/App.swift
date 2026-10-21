@@ -389,6 +389,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
 enum DeckWorkspaceTab: String, CaseIterable, Identifiable {
     case neuralDeck = "NEURAL DECK"
+    case jarvisHub = "JARVIS OMNI-OS"
     case sandboxLab = "CODE SANDBOX"
     case engMatrix = "CALC & UNITS"
     case projectOps = "PROJECT OPS"
@@ -397,11 +398,20 @@ enum DeckWorkspaceTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .neuralDeck: "cpu.fill"
+        case .jarvisHub: "sparkles.tv.fill"
         case .sandboxLab: "terminal.fill"
         case .engMatrix: "function"
         case .projectOps: "folder.fill.badge.gearshape"
         }
     }
+}
+
+struct JarvisMemoryTask: Codable, Identifiable, Equatable {
+    var id: UUID = UUID()
+    var title: String
+    var category: String
+    var isCompleted: Bool = false
+    var createdAt: Date = Date()
 }
 
 enum AssistantMode: String, CaseIterable, Identifiable {
@@ -977,11 +987,13 @@ final class ChatStore: ObservableObject {
     var onOpenCommandDeck: (() -> Void)?
     var onCenterAvatar: (() -> Void)?
 
-    // Interactive Gear-5 Avatar HUD state
+    // Interactive Gear-5 Avatar HUD & JARVIS Omni-OS state
     @Published var isAvatarHUDExpanded: Bool = true
     @Published var focusAvatarInputTrigger: Int = 0
-    @Published var avatarBubbleText: String = "⚡ Gear-5 Full Luffy Online! Drag my character anywhere on screen, press ⌘2 anytime to toggle this HUD, or click any superpower orb below."
+    @Published var avatarBubbleText: String = "⚡ Gear-5 J.A.R.V.I.S. Luffy Online! Drag my character anywhere on screen, press ⌘2 anytime to toggle this HUD, or tap any superpower orb below."
     @Published var clipboardAlertBadge: String? = nil
+    @Published var jarvisTasks: [JarvisMemoryTask] = []
+    @Published var jarvisStatusLog: String = "Ready — Click any J.A.R.V.I.S. module below to control your Mac, organize files, run a daily briefing, or launch an interactive study/career hologram."
     private var lastClipboardChangeCount: Int = NSPasteboard.general.changeCount
     private var clipboardWatcherTimer: Timer?
 
@@ -1055,6 +1067,7 @@ final class ChatStore: ObservableObject {
             webSearchEnabled = UserDefaults.standard.bool(forKey: "luffy.webSearchEnabled.v3")
         }
         startClipboardWatcher()
+        loadJarvisMemory()
     }
 
     private func startClipboardWatcher() {
@@ -1835,6 +1848,191 @@ final class ChatStore: ObservableObject {
         } else {
             avatarBubbleText = "⚡ Processing dropped text/snippet…"
             submit("Analyze, solve, or automate the following dropped text/code:\n```\n\(trimmed)\n```", attachments: [], isAutopilot: false)
+        }
+    }
+
+    // MARK: - J.A.R.V.I.S. Universal Omni-OS Superpowers & Second-Brain Memory
+
+    private var jarvisMemoryFileURL: URL {
+        let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
+        let dir = appSupport.appendingPathComponent("LuffyCompanion", isDirectory: true)
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        return dir.appendingPathComponent("jarvis_memory.json")
+    }
+
+    func loadJarvisMemory() {
+        if let data = try? Data(contentsOf: jarvisMemoryFileURL),
+           let decoded = try? JSONDecoder().decode([JarvisMemoryTask].self, from: data),
+           !decoded.isEmpty {
+            jarvisTasks = decoded
+        } else {
+            jarvisTasks = [
+                JarvisMemoryTask(title: "Review & submit tailored resume on Haveloc", category: "Career & Placement", isCompleted: false),
+                JarvisMemoryTask(title: "Prepare high-yield formula & quiz cram sheet for upcoming CT", category: "Academics & Exams", isCompleted: false),
+                JarvisMemoryTask(title: "Showcase LuffyOS & QAI-DCI-Compression live demos on GitHub", category: "Portfolio", isCompleted: true)
+            ]
+            saveJarvisMemory()
+        }
+    }
+
+    func saveJarvisMemory() {
+        if let data = try? JSONEncoder().encode(jarvisTasks) {
+            try? data.write(to: jarvisMemoryFileURL, options: .atomic)
+        }
+    }
+
+    func addJarvisTask(title: String, category: String = "Daily Goal") {
+        let clean = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        jarvisTasks.insert(JarvisMemoryTask(title: clean, category: category, isCompleted: false), at: 0)
+        saveJarvisMemory()
+    }
+
+    func toggleJarvisTask(_ id: UUID) {
+        guard let idx = jarvisTasks.firstIndex(where: { $0.id == id }) else { return }
+        jarvisTasks[idx].isCompleted.toggle()
+        saveJarvisMemory()
+    }
+
+    func removeJarvisTask(_ id: UUID) {
+        jarvisTasks.removeAll { $0.id == id }
+        saveJarvisMemory()
+    }
+
+    func speakJarvisMessage(_ text: String) {
+        speechSynthesizer.stopSpeaking(at: .immediate)
+        let clean = text
+            .replacingOccurrences(of: "`", with: "")
+            .replacingOccurrences(of: "*", with: "")
+            .replacingOccurrences(of: "#", with: "")
+        let utterance = AVSpeechUtterance(string: String(clean.prefix(360)))
+        utterance.rate = 0.51
+        utterance.pitchMultiplier = 1.02
+        speechSynthesizer.speak(utterance)
+    }
+
+    func avatarJarvisBriefing() {
+        isAvatarHUDExpanded = true
+        avatarBubbleText = "☀️ J.A.R.V.I.S. Protocol Active: Scanning macOS telemetry, battery, network, and your Second-Brain tasks…"
+        let pendingTasks = jarvisTasks.filter { !$0.isCompleted }.map(\.title)
+        Task {
+            let cmd = """
+            echo "Date/Time: $(date '+%A, %b %d · %I:%M %p')"
+            pmset -g batt | grep -Eo '[0-9]+%|charging|discharging|charged' | tr '\\n' ' '
+            echo ""
+            df -h / | tail -n 1 | awk '{print "Disk Free: " $4 " (" $5 " used)"}'
+            osascript -e 'tell application "Safari" to if (count of windows) > 0 then return "Safari Tab: " & (name of current tab of front window)' 2>/dev/null || \
+            osascript -e 'tell application "Google Chrome" to if (count of windows) > 0 then return "Chrome Tab: " & (title of active tab of front window)' 2>/dev/null || echo "Browser: Idle"
+            """
+            let sysInfo = (await AgentExecutor.runQuickShell(cmd)).trimmingCharacters(in: .whitespacesAndNewlines)
+            let pendingSummary = pendingTasks.isEmpty ? "All scheduled tasks complete!" : "\(pendingTasks.count) active priority items: " + pendingTasks.prefix(3).joined(separator: "; ")
+            let report = """
+            ☀️ **J.A.R.V.I.S. OMNI-BRIEFING ONLINE**
+            \(sysInfo)
+            • **Second-Brain Vault**: \(pendingSummary)
+            """
+            avatarBubbleText = report
+            jarvisStatusLog = report
+            speakJarvisMessage("Good day! Jarvis protocol online. \(pendingSummary).")
+        }
+    }
+
+    func avatarSmartTidyDownloads() {
+        isAvatarHUDExpanded = true
+        avatarBubbleText = "🧹 Shambles Auto-Organizer: Sorting loose files in ~/Downloads into clean folders…"
+        Task {
+            let script = """
+            cd "$HOME/Downloads" || exit 0
+            mkdir -p "📄_Documents_&_PDFs" "🖼️_Images_&_Media" "📦_Installers_&_Archives" "💻_Code_&_Data"
+            doc_count=0; img_count=0; arc_count=0; code_count=0
+            for f in *; do
+              [ -f "$f" ] || continue
+              ext="${f##*.}"
+              ext_lower=$(echo "$ext" | tr '[:upper:]' '[:lower:]')
+              case "$ext_lower" in
+                pdf|doc|docx|ppt|pptx|xls|xlsx|txt|rtf)
+                  mv -n "$f" "📄_Documents_&_PDFs/" 2>/dev/null && doc_count=$((doc_count+1)) ;;
+                png|jpg|jpeg|gif|webp|svg|heic|mp4|mov)
+                  mv -n "$f" "🖼️_Images_&_Media/" 2>/dev/null && img_count=$((img_count+1)) ;;
+                zip|tar|gz|tgz|dmg|pkg|rar|7z)
+                  mv -n "$f" "📦_Installers_&_Archives/" 2>/dev/null && arc_count=$((arc_count+1)) ;;
+                py|js|ts|swift|html|css|json|csv|sql|ipynb|sh)
+                  mv -n "$f" "💻_Code_&_Data/" 2>/dev/null && code_count=$((code_count+1)) ;;
+              esac
+            done
+            echo "Sorted into ~/Downloads: $doc_count Docs/PDFs · $img_count Images/Media · $arc_count Archives/DMGs · $code_count Code/Data files."
+            """
+            let out = (await AgentExecutor.runQuickShell(script)).trimmingCharacters(in: .whitespacesAndNewlines)
+            avatarBubbleText = "🧹 **Shambles File Organizer Complete!**\n\(out)"
+            jarvisStatusLog = "🧹 \(out)"
+            if speakReplies { speakJarvisMessage(out) }
+        }
+    }
+
+    func avatarToggleDarkMode() {
+        isAvatarHUDExpanded = true
+        Task {
+            let cmd = #"osascript -e 'tell application "System Events" to tell appearance preferences to set dark mode to not dark mode'"#
+            _ = await AgentExecutor.runQuickShell(cmd)
+            avatarBubbleText = "🌗 Toggled macOS System Dark / Light Appearance!"
+            jarvisStatusLog = "🌗 Toggled macOS Dark / Light Mode."
+        }
+    }
+
+    func jarvisExecuteQuickAction(_ action: String) {
+        isAvatarHUDExpanded = true
+        Task {
+            switch action {
+            case "play_pause":
+                let cmd = """
+                osascript -e 'if application "Spotify" is running then tell application "Spotify" to playpause' 2>/dev/null
+                osascript -e 'if application "Music" is running then tell application "Music" to playpause' 2>/dev/null
+                """
+                _ = await AgentExecutor.runQuickShell(cmd)
+                jarvisStatusLog = "🎵 Toggled Play / Pause on active music player (Spotify / Apple Music)."
+                avatarBubbleText = jarvisStatusLog
+            case "mute_toggle":
+                let cmd = #"osascript -e 'set cur to output muted of (get volume settings)' -e 'set volume output muted (not cur)'"#
+                _ = await AgentExecutor.runQuickShell(cmd)
+                jarvisStatusLog = "🔇 Toggled macOS System Audio Mute."
+                avatarBubbleText = jarvisStatusLog
+            case "vol_50":
+                _ = await AgentExecutor.runQuickShell(#"osascript -e 'set volume output volume 50 output muted false'"#)
+                jarvisStatusLog = "🔊 Set macOS System Audio Volume to 50%."
+                avatarBubbleText = jarvisStatusLog
+            case "pomodoro_25":
+                let cmd = #"(sleep 1500 && osascript -e 'display notification "25-Minute Deep Work Session Complete! Take a 5-minute break." with title "LUFFY J.A.R.V.I.S. FOCUS TIMER"' && say "Focus session complete! Great job.") &"#
+                _ = await AgentExecutor.runQuickShell(cmd)
+                jarvisStatusLog = "⏱️ Started 25-Minute Deep Focus Timer in background (will notify & speak when complete!)."
+                avatarBubbleText = jarvisStatusLog
+            case "jd_resume_match":
+                activeTab = .neuralDeck
+                submit("Read my active Safari or Chrome tab via AppleScript. If it is a job posting or internship, compare it against my LuffyOS and QAI-DCI-Compression projects, compute an ATS Match Score (0-100%), write 3 tailored resume bullets, and list the top 5 technical interview questions for this role.", attachments: [], isAutopilot: false)
+            case "exam_cram_hologram":
+                activeTab = .neuralDeck
+                submit("Build and launch a <luffy_demo> interactive Universal Exam & Interview Cram Studio at localhost:8765 featuring: (1) High-Yield Formula & Concept Flashcards, (2) Timed Interactive MCQ Quiz with instant scoring, and (3) Viva / Technical Interview Q&A simulator.", attachments: [], isAutopilot: false)
+            case "screen_reply":
+                avatarScanScreenForReply()
+            default:
+                break
+            }
+        }
+    }
+
+    func avatarScanScreenForReply() {
+        isAvatarHUDExpanded = true
+        avatarBubbleText = "✉️ Capturing screen to draft a smart reply / translation / summary…"
+        Task {
+            let imgPath = "/tmp/luffy_screen_reply.jpg"
+            let captureCmd = """
+            /usr/sbin/screencapture -x /tmp/luffy_raw_reply.png 2>/dev/null && \
+            /usr/bin/sips -s format jpeg -s formatOptions 75 -Z 1280 /tmp/luffy_raw_reply.png --out "\(imgPath)" >/dev/null 2>&1
+            """
+            _ = await AgentExecutor.runQuickShell(captureCmd)
+            if let data = try? Data(contentsOf: URL(fileURLWithPath: imgPath)), !data.isEmpty {
+                activeTab = .neuralDeck
+                submit("✉️ [UNIVERSAL SCREEN ASSISTANT] Inspect this screenshot of my screen. (1) Summarize what is shown in 3 crisp bullets, (2) If there is an email, message, form, or question on screen, draft a polished, high-impact reply ready to copy-paste, and (3) If there is any problem or decision, give the best recommendation.", attachments: [], isAutopilot: false, imageBase64: data.base64EncodedString(), imageMimeType: "image/jpeg")
+            }
         }
     }
 
@@ -3067,6 +3265,8 @@ struct ChatRootView: View {
                         if let error = voiceInput.errorMessage { errorBanner(error) }
                         if store.isAutopilotRunning { autopilotStatusBanner }
                         composer
+                    case .jarvisHub:
+                        JarvisOmniHubView(store: store)
                     case .sandboxLab:
                         CodeSandboxLabView(store: store) { askPrompt in
                             draft = askPrompt
@@ -4696,6 +4896,264 @@ struct DraggableFullLuffyView: NSViewRepresentable {
     }
 }
 
+struct JarvisOmniHubView: View {
+    @ObservedObject var store: ChatStore
+    @State private var newTaskTitle: String = ""
+    @State private var newTaskCategory: String = "Daily Goal"
+    private let categories = ["Daily Goal", "Career & Placement", "Academics & Exams", "Portfolio", "Life & Health"]
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                // Header Banner
+                HStack(spacing: 14) {
+                    ZStack {
+                        Circle()
+                            .fill(LinearGradient(colors: [.cyan.opacity(0.35), .purple.opacity(0.3)], startPoint: .topLeading, endPoint: .bottomTrailing))
+                            .frame(width: 52, height: 52)
+                        Image(systemName: "sparkles.tv.fill")
+                            .font(.system(size: 22, weight: .bold))
+                            .foregroundStyle(.cyan)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("J.A.R.V.I.S. OMNI-OS // UNIVERSAL LIFE, MAC & CAREER COMMAND CENTER")
+                            .font(.system(size: 16, weight: .black, design: .monospaced))
+                            .foregroundStyle(.cyan)
+                        Text("Control macOS hardware/apps, declutter files with 1 click, run spoken daily briefings, tailor resumes to active job tabs, and manage your persistent Second-Brain Vault.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(.white.opacity(0.75))
+                    }
+                    Spacer()
+                    Button {
+                        store.setSpeakReplies(!store.speakReplies)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: store.speakReplies ? "speaker.wave.3.fill" : "speaker.slash.fill")
+                            Text(store.speakReplies ? "JARVIS Voice: ON" : "JARVIS Voice: OFF")
+                                .font(.system(size: 11, weight: .bold, design: .monospaced))
+                        }
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
+                        .background(store.speakReplies ? Color.green.opacity(0.22) : Color.white.opacity(0.08), in: Capsule())
+                        .overlay(Capsule().stroke(store.speakReplies ? Color.green : Color.white.opacity(0.2)))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(16)
+                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.cyan.opacity(0.25)))
+
+                // Live Status Output Box
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("LIVE J.A.R.V.I.S. TELEMETRY & EXECUTION FEED")
+                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .foregroundStyle(.orange)
+                    Text(store.jarvisStatusLog)
+                        .font(.system(size: 12, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.92))
+                        .textSelection(.enabled)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(14)
+                .background(Color(red: 0.03, green: 0.06, blue: 0.12), in: RoundedRectangle(cornerRadius: 12))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.orange.opacity(0.35)))
+
+                // 1. Universal J.A.R.V.I.S. Superpower Suites
+                Text("1-CLICK UNIVERSAL J.A.R.V.I.S. AUTOMATION SUITES")
+                    .font(.system(size: 11, weight: .black, design: .monospaced))
+                    .foregroundStyle(.cyan)
+
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 12) {
+                    jarvisCard(
+                        title: "☀️ Morning & Live Briefing",
+                        subtitle: "Battery, Disk, Active Browser, Tasks + Spoken Voice Report",
+                        icon: "sun.max.fill",
+                        tint: .yellow
+                    ) {
+                        store.avatarJarvisBriefing()
+                    }
+                    jarvisCard(
+                        title: "🧹 Shambles File Organizer",
+                        subtitle: "Auto-sort ~/Downloads into Docs, Images, Archives & Code",
+                        icon: "folder.fill.badge.gearshape",
+                        tint: .green
+                    ) {
+                        store.avatarSmartTidyDownloads()
+                    }
+                    jarvisCard(
+                        title: "✉️ Screen Reader & Reply",
+                        subtitle: "Reads any open email/chat/form & writes a smart reply",
+                        icon: "envelope.badge.shield.half.filled.fill",
+                        tint: .cyan
+                    ) {
+                        store.jarvisExecuteQuickAction("screen_reply")
+                    }
+                    jarvisCard(
+                        title: "🎯 Active Job -> ATS Resume",
+                        subtitle: "Reads open LinkedIn/Haveloc job tab & writes tailored bullets",
+                        icon: "briefcase.fill",
+                        tint: .purple
+                    ) {
+                        store.jarvisExecuteQuickAction("jd_resume_match")
+                    }
+                    jarvisCard(
+                        title: "📚 Exam & Interview Hologram",
+                        subtitle: "Launches interactive Flashcards + Timed Quiz at :8765",
+                        icon: "graduationcap.fill",
+                        tint: .mint
+                    ) {
+                        store.jarvisExecuteQuickAction("exam_cram_hologram")
+                    }
+                    jarvisCard(
+                        title: "⏱️ 25-Min Deep Focus Timer",
+                        subtitle: "Background Pomodoro timer with native macOS + voice alert",
+                        icon: "timer",
+                        tint: .orange
+                    ) {
+                        store.jarvisExecuteQuickAction("pomodoro_25")
+                    }
+                }
+
+                // 2. Hardware & Media Control Strip
+                HStack(spacing: 10) {
+                    Text("MAC HARDWARE & MEDIA:")
+                        .font(.system(size: 10, weight: .black, design: .monospaced))
+                        .foregroundStyle(.white.opacity(0.65))
+                    Button("🌗 Toggle Dark Mode") { store.avatarToggleDarkMode() }
+                        .buttonStyle(.bordered)
+                    Button("🎵 Play / Pause Music") { store.jarvisExecuteQuickAction("play_pause") }
+                        .buttonStyle(.bordered)
+                    Button("🔇 Mute / Unmute") { store.jarvisExecuteQuickAction("mute_toggle") }
+                        .buttonStyle(.bordered)
+                    Button("🔊 Volume 50%") { store.jarvisExecuteQuickAction("vol_50") }
+                        .buttonStyle(.bordered)
+                    Button("🧹 Free Dev Ports") { store.avatarKillStuckDevPorts() }
+                        .buttonStyle(.bordered)
+                    Spacer()
+                }
+                .padding(12)
+                .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 12))
+
+                // 3. Persistent Second-Brain Memory Vault
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "brain.head.profile")
+                            .foregroundStyle(.cyan)
+                        Text("PONEGLYPH SECOND-BRAIN MEMORY VAULT (PERSISTENT ACROSS RESTARTS)")
+                            .font(.system(size: 11, weight: .black, design: .monospaced))
+                            .foregroundStyle(.cyan)
+                        Spacer()
+                        Text("\(store.jarvisTasks.filter { !$0.isCompleted }.count) Active · \(store.jarvisTasks.filter(\.isCompleted).count) Completed")
+                            .font(.system(size: 10, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.6))
+                    }
+
+                    HStack(spacing: 8) {
+                        Picker("", selection: $newTaskCategory) {
+                            ForEach(categories, id: \.self) { cat in
+                                Text(cat).tag(cat)
+                            }
+                        }
+                        .frame(width: 170)
+
+                        TextField("Add a task, exam date, placement goal, or personal reminder…", text: $newTaskTitle)
+                            .textFieldStyle(.roundedBorder)
+                            .onSubmit {
+                                store.addJarvisTask(title: newTaskTitle, category: newTaskCategory)
+                                newTaskTitle = ""
+                            }
+
+                        Button("Save to Vault") {
+                            store.addJarvisTask(title: newTaskTitle, category: newTaskCategory)
+                            newTaskTitle = ""
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .tint(.cyan)
+                    }
+
+                    ForEach(store.jarvisTasks) { item in
+                        HStack(spacing: 10) {
+                            Button {
+                                store.toggleJarvisTask(item.id)
+                            } label: {
+                                Image(systemName: item.isCompleted ? "checkmark.circle.fill" : "circle")
+                                    .font(.system(size: 16))
+                                    .foregroundStyle(item.isCompleted ? .green : .cyan)
+                            }
+                            .buttonStyle(.plain)
+
+                            Text(item.category.uppercased())
+                                .font(.system(size: 9, weight: .bold, design: .monospaced))
+                                .padding(.horizontal, 7)
+                                .padding(.vertical, 3)
+                                .background(Color.cyan.opacity(0.16), in: Capsule())
+                                .foregroundStyle(.cyan)
+
+                            Text(item.title)
+                                .font(.system(size: 12.5, weight: .medium))
+                                .strikethrough(item.isCompleted)
+                                .foregroundStyle(item.isCompleted ? .white.opacity(0.45) : .white)
+
+                            Spacer()
+
+                            Button("Automate w/ Luffy") {
+                                store.activeTab = .neuralDeck
+                                store.send("Help me execute and complete this goal step-by-step: \(item.title)")
+                            }
+                            .font(.system(size: 10, weight: .bold))
+                            .buttonStyle(.bordered)
+                            .controlSize(.small)
+
+                            Button {
+                                store.removeJarvisTask(item.id)
+                            } label: {
+                                Image(systemName: "trash")
+                                    .foregroundStyle(.red.opacity(0.75))
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        .padding(10)
+                        .background(Color.white.opacity(0.03), in: RoundedRectangle(cornerRadius: 10))
+                    }
+                }
+                .padding(16)
+                .background(Color.white.opacity(0.04), in: RoundedRectangle(cornerRadius: 16))
+                .overlay(RoundedRectangle(cornerRadius: 16).stroke(Color.white.opacity(0.1)))
+            }
+            .padding(22)
+        }
+    }
+
+    private func jarvisCard(title: String, subtitle: String, icon: String, tint: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Image(systemName: icon)
+                        .font(.system(size: 16, weight: .bold))
+                        .foregroundStyle(tint)
+                    Spacer()
+                    Text("RUN ↗")
+                        .font(.system(size: 9, weight: .black, design: .monospaced))
+                        .foregroundStyle(tint)
+                }
+                Text(title)
+                    .font(.system(size: 13, weight: .bold))
+                    .foregroundStyle(.white)
+                Text(subtitle)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.white.opacity(0.68))
+                    .lineLimit(2)
+                    .multilineTextAlignment(.leading)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
+            .background(tint.opacity(0.10), in: RoundedRectangle(cornerRadius: 14))
+            .overlay(RoundedRectangle(cornerRadius: 14).stroke(tint.opacity(0.35), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
 struct FloatingAvatarHUDView: View {
     @ObservedObject var store: ChatStore
     @StateObject private var voiceInput = VoiceInputManager()
@@ -4711,14 +5169,25 @@ struct FloatingAvatarHUDView: View {
             if store.isAvatarHUDExpanded {
                 // 1. Holographic Speech Bubble
                 VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 6) {
+                    HStack(spacing: 5) {
                         Circle()
                             .fill(store.isSending ? Color.orange : Color(red: 0.0, green: 0.95, blue: 0.65))
                             .frame(width: 7, height: 7)
-                        Text(store.isSending ? "GEAR-5 AGENT EXECUTING…" : "LUFFY HUD (⌘2) · HIDE (⌥SPACE)")
+                        Text(store.isSending ? "JARVIS AGENT EXECUTING…" : "JARVIS LUFFY (⌘2)")
                             .font(.system(size: 9, weight: .black, design: .monospaced))
                             .foregroundStyle(Color.cyan)
                         Spacer()
+                        Button {
+                            store.setSpeakReplies(!store.speakReplies)
+                        } label: {
+                            Text(store.speakReplies ? "🔊 Voice ON" : "🔇 Voice")
+                                .font(.system(size: 9, weight: .bold))
+                                .padding(.horizontal, 6).padding(.vertical, 2)
+                                .background(store.speakReplies ? Color.green.opacity(0.25) : Color.white.opacity(0.08), in: Capsule())
+                                .foregroundStyle(store.speakReplies ? .green : .white.opacity(0.8))
+                        }
+                        .buttonStyle(.plain)
+
                         Button {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(store.avatarBubbleText, forType: .string)
@@ -4733,21 +5202,10 @@ struct FloatingAvatarHUDView: View {
                         .buttonStyle(.plain)
 
                         Button {
-                            store.avatarKillStuckDevPorts()
-                        } label: {
-                            Text("Free Ports")
-                                .font(.system(size: 9, weight: .bold))
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Color.orange.opacity(0.18), in: Capsule())
-                                .foregroundStyle(.orange)
-                        }
-                        .buttonStyle(.plain)
-                        .help("Kill stuck processes on ports 3000, 5173, 8000, 8080")
-
-                        Button {
+                            store.activeTab = .jarvisHub
                             store.onOpenCommandDeck?()
                         } label: {
-                            Text("Full Deck (⌘1)")
+                            Text("JARVIS (⌘1)")
                                 .font(.system(size: 9, weight: .bold))
                                 .padding(.horizontal, 6).padding(.vertical, 2)
                                 .background(Color.cyan.opacity(0.2), in: Capsule())
@@ -4763,7 +5221,7 @@ struct FloatingAvatarHUDView: View {
                             .textSelection(.enabled)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
-                    .frame(maxHeight: 130)
+                    .frame(maxHeight: 115)
                 }
                 .padding(11)
                 .background(
@@ -4776,16 +5234,13 @@ struct FloatingAvatarHUDView: View {
                 )
                 .shadow(color: .black.opacity(0.55), radius: 14, y: 6)
 
-                // 2. 6 Gear-5 Superpower Action Orbs
-                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 6) {
+                // 2. 9 Universal J.A.R.V.I.S. Superpower Orbs
+                LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 5) {
                     orbButton(title: "Scan Screen", icon: "eye.fill", tint: .cyan) {
                         store.avatarScanScreen()
                     }
-                    orbButton(title: "Clipboard Fix", icon: "doc.on.clipboard.fill", tint: Color(red: 0.0, green: 0.95, blue: 0.65)) {
-                        store.avatarAnalyzeClipboard()
-                    }
-                    orbButton(title: "Browser / Git", icon: "safari.fill", tint: .purple) {
-                        store.avatarGrabBrowserOrGit()
+                    orbButton(title: "JARVIS Brief", icon: "sun.max.fill", tint: .yellow) {
+                        store.avatarJarvisBriefing()
                     }
                     orbButton(title: voiceInput.isRecording ? "Stop Mic" : "Voice Cmd", icon: voiceInput.isRecording ? "stop.circle.fill" : "mic.fill", tint: voiceInput.isRecording ? .red : .orange) {
                         if voiceInput.isRecording {
@@ -4799,7 +5254,19 @@ struct FloatingAvatarHUDView: View {
                             voiceInput.start()
                         }
                     }
-                    orbButton(title: "Port & Sys", icon: "waveform.path.ecg", tint: .yellow) {
+                    orbButton(title: "Clipboard Fix", icon: "doc.on.clipboard.fill", tint: Color(red: 0.0, green: 0.95, blue: 0.65)) {
+                        store.avatarAnalyzeClipboard()
+                    }
+                    orbButton(title: "Browser / Git", icon: "safari.fill", tint: .purple) {
+                        store.avatarGrabBrowserOrGit()
+                    }
+                    orbButton(title: "Tidy Files", icon: "folder.fill.badge.gearshape", tint: .green) {
+                        store.avatarSmartTidyDownloads()
+                    }
+                    orbButton(title: "Dark Mode", icon: "moon.stars.fill", tint: .indigo) {
+                        store.avatarToggleDarkMode()
+                    }
+                    orbButton(title: "Port & Sys", icon: "waveform.path.ecg", tint: .pink) {
                         store.avatarSystemPulse()
                     }
                     orbButton(title: "Demo :8765", icon: "globe", tint: .mint) {
