@@ -1,0 +1,52 @@
+{
+  "manifest_version": 3,
+  "name": "LuffyOS — J.A.R.V.I.S. Universal AI Companion",
+  "version": "6.0.0",
+  "description": "Floating Full-Body Luffy J.A.R.V.I.S. AI Companion for Windows, Mac & Linux. Summarize YouTube/pages, match resumes, draft replies & fix code with 9-Pool Gemini Mesh or Offline Ollama.",
+  "permissions": [
+    "storage",
+    "activeTab",
+    "scripting",
+    "tabs",
+    "sidePanel"
+  ],
+  "host_permissions": [
+    "https://generativelanguage.googleapis.com/*",
+    "http://127.0.0.1:11434/*",
+    "http://localhost:11434/*"
+  ],
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "LuffyOS J.A.R.V.I.S. Companion (Alt+L)",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "side_panel": {
+    "default_path": "popup.html"
+  },
+  "background": {
+    "service_worker": "service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "css": ["content.css"],
+      "js": ["content.js"],
+      "run_at": "document_idle"
+    }
+  ],
+  "web_accessible_resources": [
+    {
+      "resources": ["icons/luffy-idle.gif", "icons/icon-128.png"],
+      "matches": ["<all_urls>"]
+    }
+  ]
+}

@@ -2013,6 +2013,29 @@ final class ChatStore: ObservableObject {
                 submit("Build and launch a <luffy_demo> interactive Universal Exam & Interview Cram Studio at localhost:8765 featuring: (1) High-Yield Formula & Concept Flashcards, (2) Timed Interactive MCQ Quiz with instant scoring, and (3) Viva / Technical Interview Q&A simulator.", attachments: [], isAutopilot: false)
             case "screen_reply":
                 avatarScanScreenForReply()
+            case "save_apple_note":
+                let cleanBody = avatarBubbleText.replacingOccurrences(of: "\"", with: "'").replacingOccurrences(of: "\n", with: "<br>")
+                let noteCmd = """
+                osascript -e 'tell application "Notes"
+                    activate
+                    make new note at folder "Notes" with properties {body:"<h1>Luffy J.A.R.V.I.S. Intelligence Note</h1><p>\(cleanBody)</p>"}
+                end tell' 2>/dev/null || true
+                """
+                _ = await AgentExecutor.runQuickShell(noteCmd)
+                jarvisStatusLog = "📝 Saved current Luffy J.A.R.V.I.S. output directly into your macOS Apple Notes app!"
+                avatarBubbleText = jarvisStatusLog
+            case "sync_mac_reminders":
+                let pending = jarvisTasks.filter { !$0.isCompleted }
+                for item in pending.prefix(5) {
+                    let safeTitle = item.title.replacingOccurrences(of: "\"", with: "'")
+                    let remCmd = #"osascript -e 'tell application "Reminders" to make new reminder with properties {name:"[Luffy OS] \#(safeTitle)"}' 2>/dev/null || true"#
+                    _ = await AgentExecutor.runQuickShell(remCmd)
+                }
+                jarvisStatusLog = "⏰ Synced \(pending.prefix(5).count) active Second-Brain tasks directly into your macOS Reminders app!"
+                avatarBubbleText = jarvisStatusLog
+            case "youtube_lecture_digest":
+                activeTab = .neuralDeck
+                submit("Read my active Safari or Chrome tab via AppleScript. Extract the YouTube video, lecture, or article title and URL, and synthesize: (1) Executive 5-Bullet Summary, (2) Key Concepts & Definitions, (3) Actionable Takeaways, and launch a <luffy_demo> interactive visual study dashboard for it.", attachments: [], isAutopilot: false)
             default:
                 break
             }
@@ -5026,6 +5049,12 @@ struct JarvisOmniHubView: View {
                     Button("🔇 Mute / Unmute") { store.jarvisExecuteQuickAction("mute_toggle") }
                         .buttonStyle(.bordered)
                     Button("🔊 Volume 50%") { store.jarvisExecuteQuickAction("vol_50") }
+                        .buttonStyle(.bordered)
+                    Button("📝 Save to Apple Notes") { store.jarvisExecuteQuickAction("save_apple_note") }
+                        .buttonStyle(.bordered)
+                    Button("⏰ Sync to Mac Reminders") { store.jarvisExecuteQuickAction("sync_mac_reminders") }
+                        .buttonStyle(.bordered)
+                    Button("🎬 YouTube / Lecture Digest") { store.jarvisExecuteQuickAction("youtube_lecture_digest") }
                         .buttonStyle(.bordered)
                     Button("🧹 Free Dev Ports") { store.avatarKillStuckDevPorts() }
                         .buttonStyle(.bordered)

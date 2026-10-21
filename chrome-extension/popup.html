@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>LuffyOS — J.A.R.V.I.S. Web Companion</title>
+  <style>
+    body {
+      width: 340px;
+      margin: 0;
+      padding: 16px;
+      background: #070d19;
+      color: #e6edf3;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .header img {
+      width: 42px;
+      height: 42px;
+      border-radius: 10px;
+    }
+    .title {
+      font-size: 13px;
+      font-weight: 800;
+      color: #00e5ff;
+    }
+    .sub {
+      font-size: 10px;
+      color: #8b949e;
+    }
+    label {
+      display: block;
+      font-size: 10px;
+      font-weight: 700;
+      color: #00e5ff;
+      margin-top: 10px;
+      margin-bottom: 4px;
+    }
+    input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 229, 255, 0.35);
+      background: #0d1627;
+      color: #fff;
+      font-size: 11.5px;
+    }
+    .btn-row {
+      display: flex;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    button {
+      flex: 1;
+      padding: 8px 10px;
+      border-radius: 8px;
+      border: 1px solid rgba(0, 229, 255, 0.45);
+      background: rgba(0, 229, 255, 0.16);
+      color: #00e5ff;
+      font-weight: 700;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    button:hover {
+      background: rgba(0, 229, 255, 0.3);
+    }
+    #status {
+      margin-top: 10px;
+      font-size: 10.5px;
+      color: #3fb950;
+    }
+    .hint {
+      margin-top: 12px;
+      padding: 9px;
+      border-radius: 8px;
+      background: rgba(255, 255, 255, 0.04);
+      font-size: 10.5px;
+      line-height: 1.45;
+      color: #c9d1d9;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <img src="icons/icon-128.png" alt="LuffyOS" />
+    <div>
+      <div class="title">LUFFY J.A.R.V.I.S. v6.0</div>
+      <div class="sub">Universal Web Companion (Windows · Mac · Linux)</div>
+    </div>
+  </div>
+
+  <label>Google Gemini API Key (Optional — Zero-Key Mode Built In)</label>
+  <input id="apiKeyInput" type="password" placeholder="AIzaSy... (or leave blank for Local/Ollama)" />
+
+  <label>Local Ollama Model (When Offline / No Key)</label>
+  <input id="ollamaInput" type="text" value="llama3.2" placeholder="llama3.2 / qwen2.5-coder" />
+
+  <div class="btn-row">
+    <button id="saveBtn">Save Settings</button>
+    <button id="sidePanelBtn">Open Side Panel</button>
+  </div>
+
+  <div id="status"></div>
+
+  <div class="hint">
+    ⚡ <strong>Shortcut:</strong> Press <strong>Alt + L</strong> (or <strong>Option + L</strong> on Mac) on any webpage to toggle the Floating Full-Body Luffy J.A.R.V.I.S. HUD!
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

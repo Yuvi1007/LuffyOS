@@ -1,0 +1,159 @@
+/* LuffyOS v6.0 — Floating J.A.R.V.I.S. Avatar HUD for All Websites */
+#luffy-jarvis-root {
+  position: fixed;
+  right: 20px;
+  bottom: 20px;
+  z-index: 2147483646;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 8px;
+  user-select: none;
+  pointer-events: none;
+}
+
+#luffy-jarvis-root * {
+  box-sizing: border-box;
+}
+
+#luffy-jarvis-hud {
+  width: 360px;
+  background: rgba(8, 15, 30, 0.96);
+  border: 1.5px solid rgba(0, 229, 255, 0.45);
+  border-radius: 16px;
+  padding: 12px;
+  color: #f0f6fc;
+  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.65), 0 0 20px rgba(0, 229, 255, 0.18);
+  backdrop-filter: blur(14px);
+  pointer-events: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+#luffy-jarvis-hud.luffy-hidden {
+  display: none !important;
+}
+
+.luffy-hud-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10px;
+  font-weight: 800;
+  color: #00e5ff;
+  letter-spacing: 0.6px;
+}
+
+.luffy-hud-actions {
+  display: flex;
+  gap: 5px;
+}
+
+.luffy-pill-btn {
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(0, 229, 255, 0.3);
+  color: #e6edf3;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 9.5px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.luffy-pill-btn:hover {
+  background: rgba(0, 229, 255, 0.22);
+}
+
+#luffy-jarvis-bubble {
+  max-height: 150px;
+  overflow-y: auto;
+  font-size: 11.5px;
+  line-height: 1.48;
+  color: #e6edf3;
+  background: rgba(255, 255, 255, 0.04);
+  border-radius: 10px;
+  padding: 9px 10px;
+  white-space: pre-wrap;
+  user-select: text;
+}
+
+.luffy-orb-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+
+.luffy-orb {
+  background: rgba(0, 229, 255, 0.1);
+  border: 1px solid rgba(0, 229, 255, 0.32);
+  color: #ffffff;
+  border-radius: 9px;
+  padding: 6px 5px;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+  transition: all 0.15s ease;
+}
+
+.luffy-orb:hover {
+  background: rgba(0, 229, 255, 0.25);
+  transform: translateY(-1px);
+}
+
+.luffy-input-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  background: rgba(4, 9, 20, 0.95);
+  border: 1px solid rgba(0, 229, 255, 0.4);
+  border-radius: 999px;
+  padding: 5px 10px;
+}
+
+#luffy-jarvis-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: #ffffff;
+  font-size: 11.5px;
+}
+
+#luffy-avatar-trigger {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  cursor: grab;
+}
+
+#luffy-avatar-trigger:active {
+  cursor: grabbing;
+}
+
+#luffy-sprite-img {
+  width: 115px;
+  height: 124px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 14px rgba(0, 229, 255, 0.45));
+  transition: transform 0.2s ease;
+}
+
+#luffy-sprite-img:hover {
+  transform: scale(1.05);
+}
+
+#luffy-toggle-badge {
+  background: rgba(6, 12, 26, 0.94);
+  border: 1px solid rgba(0, 229, 255, 0.55);
+  color: #00e5ff;
+  border-radius: 999px;
+  padding: 5px 10px;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+}

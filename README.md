@@ -1,13 +1,24 @@
-# LuffyOS v4.0 — Native macOS Autonomous AI Engineering Workbench, Gear-5 Floating Avatar HUD & Self-Healing Code Agent
+# LuffyOS v6.0 — Universal J.A.R.V.I.S. AI Companion (macOS Native App + Cross-Platform Chrome Extension)
 
-[![Platform](https://img.shields.io/badge/Platform-macOS%2013%2B-00e5ff?style=for-the-badge&logo=apple)](https://github.com/Yuvi1007/LuffyOS)
-[![Language](https://img.shields.io/badge/Swift-5.9%2B%20%7C%20SwiftUI%20%2B%20AppKit-orange?style=for-the-badge&logo=swift)](https://github.com/Yuvi1007/LuffyOS)
-[![Architecture](https://img.shields.io/badge/Agent-Multi--Step%20ReAct%20%2B%20Gear--5%20Avatar%20HUD-00ffa3?style=for-the-badge)](https://yuvi1007.github.io/LuffyOS/)
+[![Platform](https://img.shields.io/badge/Platform-macOS%20%7C%20Windows%20%7C%20Linux%20(Chrome%20Ext)-00e5ff?style=for-the-badge&logo=apple)](https://github.com/Yuvi1007/LuffyOS/releases)
+[![Language](https://img.shields.io/badge/Swift-5.10%20%7C%20SwiftUI%20%2B%20AppKit%20%2B%20MV3-orange?style=for-the-badge&logo=swift)](https://github.com/Yuvi1007/LuffyOS)
+[![Architecture](https://img.shields.io/badge/Agent-J.A.R.V.I.S.%20Omni--OS%20%2B%209--Orb%20Avatar-00ffa3?style=for-the-badge)](https://yuvi1007.github.io/LuffyOS/)
 [![Live Showcase](https://img.shields.io/badge/Live%20Architecture%20Demo-GitHub%20Pages-b388ff?style=for-the-badge)](https://yuvi1007.github.io/LuffyOS/)
 
 > **🌐 Live Interactive Architecture Showcase:** **[https://yuvi1007.github.io/LuffyOS/](https://yuvi1007.github.io/LuffyOS/)**
+> **📦 1-Click Downloads (No Terminal Required):** **[Download `LuffyOS.dmg` (macOS) & `Luffy-Everywhere-Chrome-Extension.zip` (Windows/Mac/Linux)](https://github.com/Yuvi1007/LuffyOS/releases)**
 
-**LuffyOS** (`LuffyDesktop`) is a native macOS developer workbench, interactive floating desktop agent, and autonomous engineering OS written in **~4,850 lines of Swift (`SwiftUI` + `AppKit`)**. It combines a **9-Pool Fault-Tolerant Gemini Quota Mesh Router**, an **Interactive Gear-5 Floating Avatar HUD (`FloatingAvatarHUDView`)** with 7 OS-level automation superpowers, an **Autonomous Multi-Step ReAct Execution Harness (`AgentExecutor`)**, a **Closed-Loop Self-Healing Codebase Autopilot**, and a **4-Runtime Local Code Execution Sandbox** (`Python 3`, `Swift`, `Node.js`, `Zsh`).
+---
+
+## 🌍 1-Click Install for Everyone (Mac, Windows & Linux)
+
+| Platform | Package | How to Use in 10 Seconds |
+| :--- | :--- | :--- |
+| **🍎 macOS (Native App)** | [`LuffyOS-v6.0-Universal.dmg`](https://github.com/Yuvi1007/LuffyOS/releases) | Download `.dmg` from Releases $\to$ open **`Luffy Companion.app`**. Press **`⌘2`** to toggle the floating J.A.R.V.I.S. HUD, **`⌥Space`** to show/hide Full-Body Luffy, or **`⌘1`** for the **JARVIS OMNI-OS** Command Deck. |
+| **🪟 Windows / 🐧 Linux / 🍎 Mac Browser** | [`chrome-extension/`](chrome-extension/) (`Luffy-Everywhere-Chrome-Extension.zip`) | Open `chrome://extensions` $\to$ enable **Developer Mode** $\to$ click **Load unpacked** and select `chrome-extension/`. Press **`Alt + L`** on any webpage (YouTube, Gmail, LinkedIn, LeetCode) to summon Luffy! *(Works out-of-the-box in Zero-Key Mode, Local Ollama, or Gemini Mesh).* |
+| **🌐 Any Phone / Tablet / Browser** | [https://yuvi1007.github.io/LuffyOS/](https://yuvi1007.github.io/LuffyOS/) | Open directly in any browser to explore the live interactive architecture & simulator. |
+
+**LuffyOS** (`LuffyDesktop` + `chrome-extension`) is a universal J.A.R.V.I.S.-style AI companion and autonomous engineering OS written in **~5,500 lines of Swift (`SwiftUI` + `AppKit`) and Manifest V3 JavaScript**. It combines a **9-Pool Fault-Tolerant Gemini Quota Mesh Router**, a **Full-Body Unclipped Draggable Luffy Avatar (`FloatingAvatarHUDView`)** with **9 Universal J.A.R.V.I.S. Superpowers**, **Spoken Morning Briefings**, **1-Click `~/Downloads` File Auto-Organizer (`Shambles`)**, **Native Apple Notes & Reminders Sync**, **Active Job $\to$ ATS Resume Matcher**, **Exam Cram Hologram Builder**, and a **Persistent Second-Brain Memory Vault**.
 
 ---
 
